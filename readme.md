@@ -25,7 +25,7 @@ To install:
 
 ```
 git clone https://github.com/oats-center/spring
-cd pipeline
+cd spring
 bash setup.sh
 ```
 
