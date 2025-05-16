@@ -1,0 +1,26 @@
+[Unit]
+Description=Grafana
+Requires=tsdb.service
+After=tsdb.service
+
+[Container]
+ContainerName=grafana
+Image=docker.io/grafana/grafana-enterprise:12.0.0
+PublishPort=3000:3000
+
+Network=tsdb.network
+Network=nats.network
+
+Secret=tsdb_data_passwd,type=env
+Secret=grafana_admin_passwd
+
+Environment=GF_SECURITY_ADMIN_PASSWORD__FILE=/run/secrets/grafana_admin_passwd
+
+Volume=grafana.volume:/var/lib/grafana
+Volume=./provisioning:/etc/grafana/provisioning:Z
+
+[Service]
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target default.target

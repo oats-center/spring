@@ -1,0 +1,215 @@
+# SPRING transformer for the Digital Matter Oyster
+
+input:
+  nats_jetstream:
+    urls: ["nats://chirpstack:${nats_chirpstack_passwd}@nats"]
+    durable: "rpc-dm_oyster"
+    stream: "chirpstack-events"
+    ack_wait: 30s
+
+pipeline:
+  processors:
+    - mapping: |-
+        # Only process Digital Matter Oyster trackers
+        root = match this.deviceInfo.deviceProfileName {
+          "Digital Matter Oyster" => root,
+          _ => deleted()
+        }
+
+    - try:
+        - resource: chirpstack_schema
+        - resource: codec
+        - unarchive:
+            format: json_array
+
+        - catch:
+            - log:
+                level: ERROR
+                message: "Message (stream sequence ${!@nats_sequence_stream}) processing failed: ${!error()}"
+
+output:
+  switch:
+    cases:
+      - check: this.msg_type == "lorawan"
+        output:
+          resource: lorawan
+
+      - check: this.msg_type == "position"
+        output:
+          resource: position
+
+processor_resources:
+  - label: chirpstack_schema
+    json_schema:
+      schema: |-
+        {
+          "$schema": "http://json-schema.org/draft-04/schema#",
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "string"
+            },
+            "deviceInfo": {
+              "type": "object",
+              "properties": {
+                "deviceProfileName": {
+                  "type": "string"
+                },
+                "devEui": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "deviceProfileName",
+                "devEui"
+              ]
+            },
+            "dr": {
+              "type": "integer"
+            },
+            "fCnt": {
+              "type": "integer"
+            },
+            "fPort": {
+              "type": "integer"
+            },
+            "data": {
+              "type": "string"
+            },
+            "rxInfo": {
+              "type": "array",
+              "items": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "rssi": {
+                      "type": "integer"
+                },
+                    "snr": {
+                      "type": "number"
+                    },
+                    "channel": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "rssi"
+                  ]
+                }
+              ]
+            },
+            "txInfo": {
+              "type": "object",
+              "properties": { }
+            }
+          },
+          "required": [
+            "time",
+            "deviceInfo",
+            "dr",
+            "fCnt",
+            "fPort",
+            "data",
+            "rxInfo",
+            "txInfo"
+          ]
+        }
+
+  - label: codec
+    mapping: |-
+      let items = []
+
+      ###############
+      # Header data #
+      ###############
+      let time = this.time
+      let device_id = "lorawan:" + this.deviceInfo.devEui
+
+      ################
+      # LoRaWAN Data #
+      ################
+      let snr = this.rxInfo.map_each(d -> d.snr).filter(s -> s != null)
+      let items = $items.append({   
+          "msg_type": "lorawan",
+          "time": $time,
+          "device_id": $device_id,
+          "dr": this.dr,
+          "f_cnt": this.fCnt,
+          "f_port": this.fPort,
+          "channel": this.rxInfo.index(0).channel,
+          "rssi": this.rxInfo.map_each(d -> d.rssi).max(),
+          "snr": if $snr.length() > 0 { $snr.max() } else { null },
+          "txInfo": this.txInfo,
+          "rxInfo": this.rxInfo,
+      })
+
+      let items = $items.append({
+          "msg_type": "position",
+          "time": $time,
+          "device_id": $device_id,
+          "lon" : this.object.longitudeDeg,
+          "lat" : this.object.latitudeDeg,
+          "heading_deg": this.object.headingDeg,
+          "speed_m_s": this.object.speedKmph * 0.277778,
+      })
+
+      root = $items
+
+output_resources:
+  - label: lorawan
+    sql_insert:
+      driver: "postgres"
+      dsn: "postgres://data:${tsdb_data_passwd}@tsdb/data?ssl=prefer"
+      table: lorawan
+      columns:
+        [
+          ts,
+          device_id,
+          dr,
+          f_cnt,
+          f_port,
+          channel,
+          rssi,
+          snr,
+          rxinfo,
+          txinfo,
+          bat_v,
+        ]
+      args_mapping: |
+        root = [
+          this.time, 
+          this.device_id,
+          this.dr,
+          this.f_cnt,
+          this.f_port,
+          this.channel,
+          this.rssi,
+          this.snr,
+          this.rxInfo.format_json(no_indent: true).string(),
+          this.txInfo.format_json(no_indent: true).string(),
+          this.bat_v,
+        ]
+      suffix: ON CONFLICT (device_id, ts) DO NOTHING
+      conn_max_idle: 2
+      batching:
+        count: 1000
+        period: 1s
+
+  - label: position
+    sql_raw:
+      driver: "postgres"
+      dsn: "postgres://data:${tsdb_data_passwd}@tsdb/data?ssl=prefer"
+      query: INSERT INTO position(ts, device_id, location, heading_deg, speed_m_s) VALUES ($1, $2, ST_SetSRID(ST_MakePoint($3, $4), 4326), $5, $6);
+      args_mapping: |
+        root = [
+          this.time, 
+          this.device_id,
+          this.lon,
+          this.lat,
+          this.heading_deg,
+          this.speed_m_s
+        ]
+      conn_max_idle: 2
+      batching:
+        count: 1000
+        period: 1s

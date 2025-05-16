@@ -1,0 +1,18 @@
+[Unit]
+Requires=nats.service tsdb.service
+After=nats.service tsdb.service
+
+[Pod]
+PodName=chirpstack
+
+Network=tsdb.network
+Network=nats.network
+
+PublishPort=127.0.0.1:8080:8080
+
+[Service]
+# Make sure chirpstack's NATS stream exists
+ExecStartPre=podman run --rm --network=systemd-nats --secret=nats_chirpstack_passwd,type=env,target=NATS_PASSWORD natsio/nats-box:latest nats -s nats --user=chirpstack stream add --defaults --subjects 'application.*.device.*.events.*' --max-bytes=45GB chirpstack-events
+
+[Install]
+WantedBy=multi-user.target default.target

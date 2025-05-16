@@ -1,0 +1,23 @@
+[Unit]
+Description=Redpanda Connect pipeline processor
+Requires=tsdb.service nats.service
+After=tsdb.service nats.service
+
+[Container]
+ContainerName=rpc_%i
+Image=docker.io/redpandadata/redpanda:v24.1.21
+Exec=connect run %i.yaml
+WorkingDir=/transformers
+
+Volume=./transformers:/transformers:z
+Network=tsdb.network
+Network=nats.network
+
+Secret=nats_chirpstack_passwd,type=env
+Secret=tsdb_data_passwd,type=env
+
+[Service]
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target default.target

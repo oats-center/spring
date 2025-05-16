@@ -1,0 +1,20 @@
+[Unit]
+Description=mosquitto (Chirpstack MQTT 5 bridge to NATS)
+
+[Container]
+Pod=chirpstack.pod
+ContainerName=chirpstack-mosquitto
+Image=docker.io/library/eclipse-mosquitto:2.0.21
+Entrypoint=/spring-entrypoint.sh
+Exec=mosquitto -c /mosquitto/config/mosquitto.conf
+
+Secret=nats_chirpstack_passwd,type=env
+
+Volume=./config/mosquitto/spring-entrypoint.sh:/spring-entrypoint.sh:Z
+Volume=./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto-pre-expand.conf:Z
+
+[Service]
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target default.target

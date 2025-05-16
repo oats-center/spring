@@ -1,0 +1,20 @@
+[Unit]
+Description=NATS
+
+[Container]
+ContainerName=nats
+Image=docker.io/library/nats:2.11.3
+Exec=--config /nats-server.conf
+Network=nats.network
+
+Secret=nats_admin_passwd,type=env
+Secret=nats_chirpstack_passwd,type=env
+
+Volume=./config/nats-server.conf:/nats-server.conf:Z
+Volume=nats.volume:/data
+
+[Service]
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target default.target

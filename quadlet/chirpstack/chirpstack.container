@@ -1,0 +1,24 @@
+[Unit]
+Description=Chirpstack
+Requires=chirpstack-redis.service chirpstack-mosquitto.service tsdb.service
+After=chirpstack-redis.service chirpstack-mosquitto.service tsdb.service
+
+[Container]
+Pod=chirpstack.pod
+ContainerName=chirpstack
+Image=docker.io/chirpstack/chirpstack:4.12
+Exec=-c /etc/chirpstack
+
+# Secrets
+Secret=tsdb_chirpstack_passwd,type=env
+Secret=chirpstack_secret,type=env
+
+# Pass in config
+Volume=./config/chirpstack/:/etc/chirpstack/:Z
+
+[Service]
+Restart=on-failure
+ExecStartPre=podman run --secret tsdb_passwd --secret tsdb_chirpstack_passwd --network systemd-tsdb --volume ./.config/containers/systemd/spring_chirpstack/initdb:/initdb:Z --entrypoint sh docker.io/alpine/psql /initdb/001-init.sh
+
+[Install]
+WantedBy=multi-user.target default.target

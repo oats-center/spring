@@ -1,0 +1,27 @@
+[Unit]
+Description=Create SPRING database tables
+Requires=tsdb.service
+After=tsdb.service
+
+[Container]
+ContainerName=spring
+Image=docker.io/alpine/psql
+Entrypoint=sh
+Exec=/initdb/001-init.sh
+
+# Networks
+Network=tsdb.network
+
+# Secrets
+Secret=tsdb_passwd
+Secret=tsdb_data_passwd
+
+# Pass in config
+Volume=./initdb/:/initdb:Z
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target default.target

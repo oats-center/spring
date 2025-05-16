@@ -1,0 +1,17 @@
+[Unit]
+Description=Redis (chirpstack pod)
+
+[Container]
+Pod=chirpstack.pod
+ContainerName=chirpstack-redis
+Image=docker.io/library/redis:8.0.0-alpine
+Exec=redis-server --save 300 1 --save 60 100 --appendonly no
+
+# Volume
+Volume=chirpstack-redis.volume:/data
+
+[Service]
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target default.target

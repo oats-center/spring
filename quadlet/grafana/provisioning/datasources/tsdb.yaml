@@ -1,0 +1,19 @@
+# Configuration file version
+apiVersion: 1
+prune: true
+
+datasources:
+  - name: Postgres
+    type: postgres
+    url: tsdb
+    user: data
+    secureJsonData:
+      password: $tsdb_data_passwd
+    jsonData:
+      database: data
+      sslmode: disable
+      maxOpenConns: 100
+      maxIdleConns: 100
+      maxIdleConnsAuto: true
+      connMaxLifetime: 14400
+      timescaledb: true

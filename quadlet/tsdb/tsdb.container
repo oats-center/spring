@@ -1,0 +1,25 @@
+[Unit]
+Description=Postgres/TimeScale DB
+
+[Container]
+ContainerName=tsdb
+Image=docker.io/timescale/timescaledb-ha:pg17-ts2.19
+PublishPort=127.0.0.1:5432:5432
+Network=tsdb.network
+
+# Secrets
+Secret=tsdb_passwd
+Secret=tsdb_chirpstack_passwd
+Secret=tsdb_data_passwd
+
+# Environment
+Environment=POSTGRES_PASSWORD_FILE=/run/secrets/tsdb_passwd
+
+# Volumes
+Volume=tsdb.volume:/home/postgres/pgdata/data
+
+[Service]
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target default.target

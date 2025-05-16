@@ -1,0 +1,246 @@
+# SPRING transformer for the Dragino LSE01 soil moisture sensor
+#
+input:
+  nats_jetstream:
+    urls: ["nats://chirpstack:${nats_chirpstack_passwd}@nats"]
+    durable: "rpc-lse01"
+    stream: "chirpstack-events"
+    ack_wait: 30s
+
+pipeline:
+  processors:
+    - mapping: |-
+        # Only process LSE01 soil sensors
+        root = match this.deviceInfo.deviceProfileName {
+          "LSE01 - Soil Sensor" => root,
+          _ => deleted()
+        }
+
+    - try:
+        - resource: chirpstack_schema
+        - resource: codec
+        - unarchive:
+            format: json_array
+
+        - catch:
+            - log:
+                level: ERROR
+                message: "Message (stream sequence ${!@nats_sequence_stream}) processing failed: ${!error()}"
+
+output:
+  switch:
+    cases:
+      - check: this.msg_type == "lorawan"
+        output:
+          resource: lorawan
+
+      - check: this.msg_type == "moisture"
+        output:
+          resource: moisture
+
+      - check: this.msg_type == "temperature"
+        output:
+          resource: temperature
+
+processor_resources:
+  - label: chirpstack_schema
+    json_schema:
+      schema: |-
+        {
+          "$schema": "http://json-schema.org/draft-04/schema#",
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "string"
+            },
+            "deviceInfo": {
+              "type": "object",
+              "properties": {
+                "deviceProfileName": {
+                  "type": "string"
+                },
+                "devEui": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "deviceProfileName",
+                "devEui"
+              ]
+            },
+            "dr": {
+              "type": "integer"
+            },
+            "fCnt": {
+              "type": "integer"
+            },
+            "fPort": {
+              "type": "integer"
+            },
+            "data": {
+              "type": "string"
+            },
+            "rxInfo": {
+              "type": "array",
+              "items": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "rssi": {
+                      "type": "integer"
+                },
+                    "snr": {
+                      "type": "number"
+                    },
+                    "channel": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "rssi"
+                  ]
+                }
+              ]
+            },
+            "txInfo": {
+              "type": "object",
+              "properties": { }
+            }
+          },
+          "required": [
+            "time",
+            "deviceInfo",
+            "dr",
+            "fCnt",
+            "fPort",
+            "data",
+            "rxInfo",
+            "txInfo"
+          ]
+        }
+
+  - label: codec
+    mapping: |-
+      let items = []
+
+      ###############
+      # Header data #
+      ###############
+      let time = this.time
+      let device_id = "lorawan:" + this.deviceInfo.devEui
+
+      ################
+      # LoRaWAN Data #
+      ################
+      let snr = this.rxInfo.map_each(d -> d.snr).filter(s -> s != null)
+      let items = $items.append({   
+          "msg_type": "lorawan",
+          "time": $time,
+          "device_id": $device_id,
+          "dr": this.dr,
+          "f_cnt": this.fCnt,
+          "f_port": this.fPort,
+          "channel": this.rxInfo.index(0).channel,
+          "rssi": this.rxInfo.map_each(d -> d.rssi).max(),
+          "snr": if $snr.length() > 0 { $snr.max() } else { null },
+          "txInfo": this.txInfo,
+          "rxInfo": this.rxInfo,
+      })
+
+      let items = $items.append({
+          "msg_type": "moisture",
+          "time": $time,
+          "device_id": $device_id,
+          "depth_cm": if this.deviceInfo.tags.depth_cm != null {this.deviceInfo.tags.depth_cm} else {-1},
+          "vwc": this.object.vwc,
+          "ec_us_cm": this.object.soil_conduct_uS_cm,
+      })
+
+      let items = $items.append({
+          "msg_type": "temperature",
+          "time": $time,
+          "device_id": $device_id,
+          "depth_cm": if this.deviceInfo.tags.depth_cm != null {this.deviceInfo.tags.depth_cm} else {-1},
+          "temp_c": this.object.soil_temp_c,
+      })     
+
+      root = $items
+
+output_resources:
+  - label: lorawan
+    sql_insert:
+      driver: "postgres"
+      dsn: "postgres://data:${tsdb_data_passwd}@tsdb/data?ssl=prefer"
+      table: lorawan
+      columns:
+        [
+          ts,
+          device_id,
+          dr,
+          f_cnt,
+          f_port,
+          channel,
+          rssi,
+          snr,
+          rxinfo,
+          txinfo,
+          bat_v,
+        ]
+      args_mapping: |
+        root = [
+          this.time, 
+          this.device_id,
+          this.dr,
+          this.f_cnt,
+          this.f_port,
+          this.channel,
+          this.rssi,
+          this.snr,
+          this.rxInfo.format_json(no_indent: true).string(),
+          this.txInfo.format_json(no_indent: true).string(),
+          this.bat_v,
+        ]
+      suffix: ON CONFLICT (device_id, ts) DO NOTHING
+      conn_max_idle: 2
+      batching:
+        count: 1000
+        period: 1s
+
+  - label: moisture
+    sql_insert:
+      driver: "postgres"
+      dsn: "postgres://data:${tsdb_data_passwd}@tsdb/data?ssl=prefer"
+      table: soil_moisture
+      columns: [ts, device_id, depth_cm, vwc, ec_us_cm]
+      args_mapping: |
+        root = [
+          this.time, 
+          this.device_id,
+          this.depth_cm,
+          this.vwc,
+          this.ec_us_cm
+        ]
+      suffix: ON CONFLICT (device_id, depth_cm, ts) DO NOTHING
+      conn_max_idle: 2
+      batching:
+        count: 1000
+        period: 1s
+
+  - label: temperature
+    sql_insert:
+      driver: "postgres"
+      dsn: "postgres://data:${tsdb_data_passwd}@tsdb/data?ssl=prefer"
+      table: soil_temp
+      columns: [ts, device_id, depth_cm, temp_c]
+      args_mapping: |
+        root = [
+          this.time, 
+          this.device_id,
+          this.depth_cm,
+          this.temp_c,
+        ]
+      suffix: ON CONFLICT (device_id, depth_cm, ts) DO NOTHING
+      conn_max_idle: 2
+      batching:
+        count: 1000
+        period: 1s
