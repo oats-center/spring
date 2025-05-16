@@ -67,7 +67,7 @@ All installed services should automatically start on boot (unless you have manua
 To start them initally:
 
 ```sh
-systemctl start tsdb nats chirpstack-pod grafana
+systemctl start tsdb nats chirpstack-pod grafana spring
 ```
 
 ## Starting transformers
