@@ -85,24 +85,19 @@ pull_containers() {
 
     mapfile -t images < <(sed -n 's/^Image=//p' "$quadlet_dir/spring_$service/"*.container)
 
-    for image in ${images[@]}; do
-
-        podman image exists $image
-
-        if [ -z $? ]; then
+    for image in "${images[@]}"; do
+        if ! podman image exists "$image"; then
             echo -e "    Fetching image: ${GREEN}${BOLD}$image${NOBOLD}${NC}"
 
-            result=$(podman pull $image 2>&1)
-
+            result=$(podman pull "$image" 2>&1)
             if [ $? -ne 0 ]; then
                 echo -e "  ${RED}${BOLD}Image pull failed!${NOBOLD}${NC}. Error:"
                 echo -e "${YELLOW}$result${NC}"
                 echo -e "  ${RED}Exiting${NC}"
-                exit 1;
+                exit 1
             fi
         fi
     done
-
 }
 
 create_secret() {
