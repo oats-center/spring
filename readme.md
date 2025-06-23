@@ -31,6 +31,38 @@ bash setup.sh
 
 And complete the question and answer prompts.
 
+# Troubleshooting
+
+## Podman image pull fails with short name (Error 125)
+
+When running under systemd, Podman may fail to pull certain images such as `natsio/nats-box:latest`, producing the following error:
+```
+Error: short-name resolution enforced but cannot prompt without a TTY
+```
+
+This occurs because Podman enforces confirmation for short image names (like `natsio/nats-box`) for security reasons, but can’t prompt you when running non-interactively (e.g., under a systemd service).
+
+This failure results in:
+```
+chirpstack-pod.service: Control process exited, code=exited, status=125
+```
+
+### Fix: Configure short-name aliases in Podman
+
+To resolve this, you can explicitly tell Podman how to resolve the short image name by creating a local alias.
+Run the following:
+```
+mkdir -p ~/.config/containers
+nano ~/.config/containers/registries.conf
+```
+Add this to the file:
+```
+[aliases]
+"natsio/nats-box" = "docker.io/natsio/nats-box"
+```
+
+This allows Podman to resolve `natsio/nats-box` automatically to Docker Hub, avoiding the need for confirmation and allowing systemd services to start without error.
+
 # Manual installation
 
 ## Quadlet
