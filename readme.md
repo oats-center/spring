@@ -63,6 +63,22 @@ Add this to the file:
 
 This allows Podman to resolve `natsio/nats-box` automatically to Docker Hub, avoiding the need for confirmation and allowing systemd services to start without error.
 
+## Fedora 41+ (DigitalOcean) – SUID Not Permitted
+
+Some systems (e.g., Fedora 41 on DigitalOcean) do not allow SUID binaries like `newuidmap` and `newgidmap` for security reasons. Instead, they rely on Linux capabilities (`setcap`) to grant limited privileges.
+
+If `setup.sh` fails to apply the SUID fix, if SUID is ignored by your OS, or if you encounter the following error: `Failed to connect to bus: No medium found`, then you can apply the following workaround.
+
+### Fix: Capability-based Workaround
+
+```bash
+sudo chmod u-s /usr/bin/new[gu]idmap
+sudo setcap cap_setuid+eip /usr/bin/newuidmap
+sudo setcap cap_setgid+eip /usr/bin/newgidmap
+```
+
+This ensures Podman can correctly assign user/group mappings for rootless containers in environments that enforce tighter restrictions on SUID usage.
+
 # Manual installation
 
 ## Quadlet
