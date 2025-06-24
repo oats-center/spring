@@ -31,6 +31,54 @@ bash setup.sh
 
 And complete the question and answer prompts.
 
+# Troubleshooting
+
+## Podman image pull fails with short name (Error 125)
+
+When running under systemd, Podman may fail to pull certain images such as `natsio/nats-box:latest`, producing the following error:
+```
+Error: short-name resolution enforced but cannot prompt without a TTY
+```
+
+This occurs because Podman enforces confirmation for short image names (like `natsio/nats-box`) for security reasons, but can’t prompt you when running non-interactively (e.g., under a systemd service).
+
+This failure results in:
+```
+chirpstack-pod.service: Control process exited, code=exited, status=125
+```
+
+### Fix: Configure short-name aliases in Podman
+
+To resolve this, you can explicitly tell Podman how to resolve the short image name by creating a local alias.
+Run the following:
+```
+mkdir -p ~/.config/containers
+nano ~/.config/containers/registries.conf
+```
+Add this to the file:
+```
+[aliases]
+"natsio/nats-box" = "docker.io/natsio/nats-box"
+```
+
+This allows Podman to resolve `natsio/nats-box` automatically to Docker Hub, avoiding the need for confirmation and allowing systemd services to start without error.
+
+## Fedora 41+ (DigitalOcean) – SUID Not Permitted
+
+Some systems (e.g., Fedora 41 on DigitalOcean) do not allow SUID binaries like `newuidmap` and `newgidmap` for security reasons. Instead, they rely on Linux capabilities (`setcap`) to grant limited privileges.
+
+If `setup.sh` fails to apply the SUID fix, if SUID is ignored by your OS, or if you encounter the following error: `Failed to connect to bus: No medium found`, then you can apply the following workaround.
+
+### Fix: Capability-based Workaround
+
+```bash
+sudo chmod u-s /usr/bin/new[gu]idmap
+sudo setcap cap_setuid+eip /usr/bin/newuidmap
+sudo setcap cap_setgid+eip /usr/bin/newgidmap
+```
+
+This ensures Podman can correctly assign user/group mappings for rootless containers in environments that enforce tighter restrictions on SUID usage.
+
 # Manual installation
 
 ## Quadlet
