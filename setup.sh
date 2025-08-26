@@ -202,6 +202,17 @@ if ! command -v "podman" &> /dev/null; then
     exit 1
 fi
 
+if [ ! -u /usr/bin/newuidmap ] || [ ! -u /usr/bin/newgidmap ]; then
+    echo -e "${YELLOW}SUID bit is not set on /usr/bin/newuidmap or /usr/bin/newgidmap.${NC}"
+    if ask_yes_no "Would you like to fix this now (requires sudo)?" "y"; then
+        sudo chmod u+s /usr/bin/newuidmap /usr/bin/newgidmap
+        echo -e "${GREEN}SUID bits applied.${NC}"
+    else
+        echo -e "${RED}Rootless containers may not work correctly without this. Exiting.${NC}"
+        exit 1
+    fi
+fi
+
 ###
 ### SPRING
 ###
