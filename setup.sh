@@ -6,7 +6,6 @@ declare -A services
 declare -A secrets
 
 # FIXME: Make services setup their own DB ... Will need for not Self-host
-# FIXME: If we are doing non-rootful containers, should be check to make sure the user's systemd session is in linger mode?
 
 # FIXME: I should be using this I think??
 quadlet_dir="$HOME/.config/containers/systemd"
@@ -200,6 +199,24 @@ fi
 if ! command -v "podman" &> /dev/null; then
     echo -e "${RED}${BOLD}Podman${NOBOLD} is required. Please install (https://podman.io/docs/installation) and try again.${NC}"
     exit 1
+fi
+
+# Check if linger is enabled for the current user
+if ! loginctl show-user "$USER" | grep -q "Linger=yes"; then
+    echo -e "${YELLOW}Linger mode is not enabled for user ${BOLD}$USER${NOBOLD}.${NC}"
+    echo -e "${CYAN}Linger is required to allow user services to start at boot.${NC}"
+
+    if ask_yes_no "Would you like to enable linger mode now (requires sudo)?" "y"; then
+        if sudo loginctl enable-linger "$USER"; then
+            echo -e "${GREEN}Linger mode enabled for ${BOLD}$USER${NOBOLD}.${NC}"
+        else
+            echo -e "${RED}Failed to enable linger mode. Please try manually: sudo loginctl enable-linger $USER${NC}"
+            exit 1
+        fi
+    else
+        echo -e "${RED}Linger mode is required. Exiting.${NC}"
+        exit 1
+    fi
 fi
 
 ###
